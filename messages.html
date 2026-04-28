@@ -33,6 +33,8 @@
   </div>
 </main>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script src="app.js"></script>
 <script>
   const currentUser = getCurrentUser();
@@ -40,20 +42,33 @@
 
   const params        = new URLSearchParams(location.search);
   let activePartnerId = params.get('with') || null;
+  let unsubConvs      = null;
+  let unsubMsgs       = null;
 
   document.getElementById('profileBtn').textContent = currentUser?.icon || '👤';
 
   // ── 会話リスト ─────────────────────────────────────────────────────────
-  function renderConvList() {
-    const convs = getConversations();
-    const list  = document.getElementById('convList');
+  function startConvListener() {
+    if (unsubConvs) unsubConvs();
+    unsubConvs = listenConversations(async convs => {
+      // パートナーユーザーを事前ロード
+      const ids = [...new Set([
+        ...convs.map(c => c.partnerId),
+        ...(activePartnerId ? [activePartnerId] : [])
+      ])];
+      await Promise.all(ids.map(id => loadUser(id)));
+      renderConvList(convs);
+    });
+  }
+
+  function renderConvList(convs) {
+    const list = document.getElementById('convList');
     list.innerHTML = '';
 
-    // ?with= で開いた相手がまだ会話一覧にない場合も先頭に表示
     const inList = convs.some(c => c.partnerId === activePartnerId);
     if (activePartnerId && !inList) {
       const partner = getUserById(activePartnerId);
-      if (partner) appendConvItem(list, activePartnerId, partner, null, true, 0);
+      if (partner) appendConvItem(list, activePartnerId, partner, '', true, 0);
     }
 
     if (convs.length === 0 && !activePartnerId) {
@@ -67,21 +82,18 @@
 
     convs.forEach(conv => {
       const partner = getUserById(conv.partnerId);
-      const unread  = _getArr(KEYS.messages).filter(
-        m => m.fromId === conv.partnerId && m.toId === currentUser.id && !m.read
-      ).length;
-      appendConvItem(list, conv.partnerId, partner, conv.lastMessage, activePartnerId === conv.partnerId, unread);
+      appendConvItem(list, conv.partnerId, partner, conv.lastContent||'', activePartnerId === conv.partnerId, conv.unread||0);
     });
   }
 
-  function appendConvItem(list, partnerId, partner, lastMsg, isActive, unread) {
+  function appendConvItem(list, partnerId, partner, lastContent, isActive, unread) {
     const el = document.createElement('div');
     el.className = `conv-item${isActive ? ' active' : ''}`;
     el.innerHTML = `
       <div class="avatar sm">${esc(partner?.icon || '👤')}</div>
       <div class="conv-info">
         <div class="conv-name">${esc(partner?.username || '不明')}</div>
-        <div class="conv-preview">${lastMsg ? esc(lastMsg.content) : '新しい会話'}</div>
+        <div class="conv-preview">${lastContent ? esc(lastContent) : '新しい会話'}</div>
       </div>
       ${unread > 0 ? `<span class="badge" style="position:static">${unread}</span>` : ''}
     `;
@@ -93,23 +105,19 @@
   function openConv(partnerId) {
     activePartnerId = partnerId;
     markRead(partnerId);
-    renderConvList();
-    renderChat();
-    // URL更新（戻るボタン対応）
+    startConvListener();
+
     const url = new URL(location.href);
     url.searchParams.set('with', partnerId);
     history.replaceState({}, '', url);
+
+    if (unsubMsgs) unsubMsgs();
+    unsubMsgs = listenMessages(partnerId, messages => renderChat(partnerId, messages));
   }
 
-  function renderChat() {
-    const panel = document.getElementById('chatPanel');
-    if (!activePartnerId) {
-      panel.innerHTML = `<div class="no-chat"><div style="font-size:48px">💬</div><p>会話を選んでください</p></div>`;
-      return;
-    }
-
-    const partner  = getUserById(activePartnerId);
-    const messages = getMessages(activePartnerId);
+  function renderChat(partnerId, messages) {
+    const panel   = document.getElementById('chatPanel');
+    const partner = getUserById(partnerId);
 
     const msgsHtml = messages.length > 0
       ? messages.map(m => {
@@ -134,7 +142,6 @@
       </div>
     `;
 
-    // 最下部にスクロール
     const chatEl = document.getElementById('chatMessages');
     chatEl.scrollTop = chatEl.scrollHeight;
 
@@ -152,15 +159,15 @@
     if (!text || !activePartnerId) return;
     sendMessage(activePartnerId, text);
     input.value = '';
-    renderChat();
-    renderConvList();
   }
 
   // ── 起動 ───────────────────────────────────────────────────────────────
-  renderConvList();
+  startConvListener();
   if (activePartnerId) {
-    markRead(activePartnerId);
-    renderChat();
+    loadUser(activePartnerId).then(() => {
+      markRead(activePartnerId);
+      unsubMsgs = listenMessages(activePartnerId, messages => renderChat(activePartnerId, messages));
+    });
   }
 </script>
 </body>

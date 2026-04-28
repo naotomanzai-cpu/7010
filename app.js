@@ -1,15 +1,22 @@
-const KEYS = {
-  posts:       'pb_posts_v2',
-  users:       'pb_users',
-  currentUser: 'pb_currentUser',
-  comments:    'pb_comments',
-  likes:       'pb_likes_v2',
-  messages:    'pb_messages'
+// ── 学校のGmailドメイン設定 ─────────────────────────────────────────────────
+const SCHOOL_DOMAIN = '';
+
+// ── Firebase 設定 ───────────────────────────────────────────────────────────
+// 手順:
+//  1. https://console.firebase.google.com/ でプロジェクト作成
+//  2. 「Realtime Database」を「テストモード」で有効化
+//  3. プロジェクトの設定 → マイアプリ → Web(</>)アプリ追加 → config をコピーして貼り付け
+const FIREBASE_CONFIG = {
+  apiKey: "",
+  authDomain: "",
+  databaseURL: "",   // ← 必須: https://YOUR-PROJECT-default-rtdb.firebaseio.com
+  projectId: "",
+  storageBucket: "",
+  messagingSenderId: "",
+  appId: ""
 };
 
-// ── 学校のGmailドメイン設定 ───────────────────────────────────────────────
-// 例: '@school.ed.jp' に変更すると、そのドメインのみ登録できます
-const SCHOOL_DOMAIN = ''; // 空のままだと制限なし
+const POST_MAX_LENGTH = 150;
 
 const ICONS = [
   '🐱','🐶','🐰','🐻','🐼','🦊',
@@ -19,143 +26,6 @@ const ICONS = [
   '📚','💻','👑','💎','🔥','🌊'
 ];
 
-function _getArr(key) { return JSON.parse(localStorage.getItem(key) || '[]'); }
-function _setArr(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
-function _setOne(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
-function genId() { return Math.random().toString(36).substr(2, 9); }
-
-// ── Users ─────────────────────────────────────────────────────────────────
-function getUsers()       { return _getArr(KEYS.users); }
-function getCurrentUser() { return JSON.parse(localStorage.getItem(KEYS.currentUser) || 'null'); }
-function getUserById(id)  { return getUsers().find(u => u.id === id) || null; }
-
-function createUser(username, icon, bio) {
-  const users = getUsers();
-  const user  = { id: genId(), username, icon, bio: bio || '', createdAt: new Date().toISOString() };
-  users.push(user);
-  _setArr(KEYS.users, users);
-  _setOne(KEYS.currentUser, user);
-  return user;
-}
-
-function updateCurrentUser(username, icon, bio) {
-  const cur = getCurrentUser();
-  if (!cur) return null;
-  const users   = getUsers();
-  const idx     = users.findIndex(u => u.id === cur.id);
-  const updated = { ...cur, username, icon, bio: bio !== undefined ? bio : (cur.bio || '') };
-  if (idx !== -1) users[idx] = updated;
-  _setArr(KEYS.users, users);
-  _setOne(KEYS.currentUser, updated);
-  return updated;
-}
-
-function logout() { localStorage.removeItem(KEYS.currentUser); }
-
-// ── Posts ─────────────────────────────────────────────────────────────────
-const POST_MAX_LENGTH = 150;
-function getPosts()           { return _getArr(KEYS.posts); }
-function getPostById(id)      { return getPosts().find(p => p.id === id) || null; }
-function getPostsByUser(uid)  { return getPosts().filter(p => p.authorId === uid); }
-
-function createPost(content, tags, image) {
-  const user = getCurrentUser();
-  const posts = getPosts();
-  const post  = {
-    id: genId(),
-    authorId: user.id,
-    content: content.slice(0, POST_MAX_LENGTH),
-    tags: tags || [],
-    image: image || null,
-    createdAt: new Date().toISOString()
-  };
-  posts.unshift(post);
-  _setArr(KEYS.posts, posts);
-  return post;
-}
-
-// ── Comments ──────────────────────────────────────────────────────────────
-function getComments(postId) { return _getArr(KEYS.comments).filter(c => c.postId === postId); }
-function addComment(postId, content) {
-  const user = getCurrentUser();
-  const cmts = _getArr(KEYS.comments);
-  cmts.push({ id: genId(), postId, authorId: user.id, content, createdAt: new Date().toISOString() });
-  _setArr(KEYS.comments, cmts);
-}
-
-// ── Likes ─────────────────────────────────────────────────────────────────
-function toggleLike(postId) {
-  const user = getCurrentUser();
-  if (!user) return false;
-  let likes = _getArr(KEYS.likes);
-  const key = `${user.id}_${postId}`;
-  const idx = likes.indexOf(key);
-  if (idx > -1) { likes.splice(idx, 1); _setArr(KEYS.likes, likes); return false; }
-  else           { likes.push(key);     _setArr(KEYS.likes, likes); return true; }
-}
-function hasLiked(postId) {
-  const user = getCurrentUser();
-  if (!user) return false;
-  return _getArr(KEYS.likes).includes(`${user.id}_${postId}`);
-}
-function getLikeCount(postId) { return _getArr(KEYS.likes).filter(k => k.endsWith(`_${postId}`)).length; }
-function getPopularityScore(postId) { return getComments(postId).length + getLikeCount(postId); }
-
-// ── Messages ──────────────────────────────────────────────────────────────
-function getMessages(partnerId) {
-  const user = getCurrentUser();
-  if (!user) return [];
-  return _getArr(KEYS.messages)
-    .filter(m => (m.fromId === user.id && m.toId === partnerId) || (m.fromId === partnerId && m.toId === user.id))
-    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-}
-function getUnreadCount() {
-  const user = getCurrentUser();
-  if (!user) return 0;
-  return _getArr(KEYS.messages).filter(m => m.toId === user.id && !m.read).length;
-}
-function sendMessage(toId, content) {
-  const user = getCurrentUser();
-  const all  = _getArr(KEYS.messages);
-  const msg  = { id: genId(), fromId: user.id, toId, content, createdAt: new Date().toISOString(), read: false };
-  all.push(msg);
-  _setArr(KEYS.messages, all);
-  return msg;
-}
-function markRead(fromId) {
-  const user = getCurrentUser();
-  const all  = _getArr(KEYS.messages);
-  let changed = false;
-  all.forEach(m => { if (m.fromId === fromId && m.toId === user.id && !m.read) { m.read = true; changed = true; } });
-  if (changed) _setArr(KEYS.messages, all);
-}
-function getConversations() {
-  const user = getCurrentUser();
-  if (!user) return [];
-  const partners = new Set();
-  const convs = [];
-  [..._getArr(KEYS.messages)]
-    .sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .forEach(m => {
-      let pId = m.fromId === user.id ? m.toId : (m.toId === user.id ? m.fromId : null);
-      if (pId && !partners.has(pId)) { partners.add(pId); convs.push({ partnerId: pId, lastMessage: m }); }
-    });
-  return convs;
-}
-
-// ── Utils ─────────────────────────────────────────────────────────────────
-function timeAgo(dateStr) {
-  const diff = Date.now() - new Date(dateStr);
-  if (diff < 60000)    return '今さっき';
-  if (diff < 3600000)  return `${Math.floor(diff / 60000)}分前`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}時間前`;
-  const d = new Date(dateStr);
-  return `${d.getMonth() + 1}/${d.getDate()}`;
-}
-function esc(str) {
-  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
 const PRESET_TAGS = [
   '重要','公式','行事予定','時間割','教室変更',
   '提出物','課題・宿題','テスト対策','進路・受験','授業ノート',
@@ -164,6 +34,32 @@ const PRESET_TAGS = [
   '文化祭','体育祭','有志募集','自己紹介','雑談',
   '趣味・創作','放課後','ニュース','運営への要望','募集終了'
 ];
+
+// ── Firebase DB ───────────────────────────────────────────────────────────
+let _db = null;
+function db() {
+  if (_db) return _db;
+  try {
+    if (!FIREBASE_CONFIG.databaseURL) return null;
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    _db = firebase.database();
+  } catch(e) { console.error('Firebase init error:', e); }
+  return _db;
+}
+
+// ── Utils ─────────────────────────────────────────────────────────────────
+function genId() { return Date.now().toString(36) + Math.random().toString(36).substr(2,5); }
+function esc(s) {
+  return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function timeAgo(d) {
+  const diff = Date.now() - new Date(d);
+  if (diff < 60000)    return '今さっき';
+  if (diff < 3600000)  return `${Math.floor(diff/60000)}分前`;
+  if (diff < 86400000) return `${Math.floor(diff/3600000)}時間前`;
+  const dt = new Date(d); return `${dt.getMonth()+1}/${dt.getDate()}`;
+}
+
 function tagStyle(tag) {
   const colors = {
     '重要':       '#FEE2E2,#DC2626', '公式':       '#DBEAFE,#1D4ED8',
@@ -182,43 +78,235 @@ function tagStyle(tag) {
     '放課後':     '#FEF2F2,#B91C1C', 'ニュース':   '#EFF6FF,#1D4ED8',
     '運営への要望':'#F1F5F9,#475569', '募集終了':   '#F3F4F6,#6B7280'
   };
-  const [bg, col] = (colors[tag] || '#F3F4F6,#374151').split(',');
+  const [bg,col] = (colors[tag]||'#F3F4F6,#374151').split(',');
   return `background:${bg};color:${col}`;
 }
 function tagChip(tag, clickable) {
-  const style = tagStyle(tag);
-  if (clickable) return `<a class="tag" href="index.html?tag=${encodeURIComponent(tag)}" style="${style}">#${esc(tag)}</a>`;
-  return `<span class="tag" style="${style}">#${esc(tag)}</span>`;
+  const s = tagStyle(tag);
+  if (clickable) return `<a class="tag" href="index.html?tag=${encodeURIComponent(tag)}" style="${s}">#${esc(tag)}</a>`;
+  return `<span class="tag" style="${s}">#${esc(tag)}</span>`;
 }
 function tagChipStop(tag) {
-  const style = tagStyle(tag);
-  return `<span class="tag tag-clickable" style="${style}" onclick="event.preventDefault();event.stopPropagation();location.href='index.html?tag=${encodeURIComponent(tag)}'">#${esc(tag)}</span>`;
+  const s = tagStyle(tag);
+  return `<span class="tag tag-clickable" style="${s}" onclick="event.preventDefault();event.stopPropagation();location.href='index.html?tag=${encodeURIComponent(tag)}'">#${esc(tag)}</span>`;
 }
 
-// ── Demo seed ─────────────────────────────────────────────────────────────
-const DEMO_USER_ID = 'demo_sakura_001';
-function seedDemoData() {
-  if (localStorage.getItem('pb_demo_seeded_v1')) return;
-  const demoUser = { id: DEMO_USER_ID, username: 'さくら', icon: '🌸', bio: 'シンギュラリティ高校2年B組です！写真部です📸', createdAt: new Date(Date.now()-86400000*5).toISOString() };
-  const users = getUsers();
-  if (!users.find(u => u.id === DEMO_USER_ID)) { users.push(demoUser); _setArr(KEYS.users, users); }
-  const now = Date.now();
-  const demoPosts = [
-    { id:'demo_post_001', authorId:DEMO_USER_ID, content:'明日の体育祭、2年B組は赤チームです🎽 応援よろしく！', tags:['体育祭','行事予定'], image:null, createdAt:new Date(now-86400000*2).toISOString() },
-    { id:'demo_post_002', authorId:DEMO_USER_ID, content:'数学のノートを落としてしまいました😭 拾ってくれた方いたらDMください！', tags:['落とし物','悩み相談'], image:null, createdAt:new Date(now-86400000).toISOString() },
-    { id:'demo_post_003', authorId:DEMO_USER_ID, content:'写真部の展示やってます📸 中央廊下の掲示板に展示中！放課後ぜひ見に来てください〜', tags:['有志募集','放課後','趣味・創作'], image:null, createdAt:new Date(now-3600000*3).toISOString() }
-  ];
-  const posts = getPosts();
-  demoPosts.forEach(p => { if (!posts.find(e => e.id === p.id)) posts.unshift(p); });
-  _setArr(KEYS.posts, posts.sort((a,b) => new Date(b.createdAt)-new Date(a.createdAt)));
-  localStorage.setItem('pb_demo_seeded_v1', '1');
+// ── Current User (localStorage) ───────────────────────────────────────────
+function getCurrentUser() { return JSON.parse(localStorage.getItem('pb_currentUser')||'null'); }
+function _saveCurrentUser(u) { localStorage.setItem('pb_currentUser', JSON.stringify(u)); }
+function logout() { localStorage.removeItem('pb_currentUser'); }
+
+// ── Users (Firebase + memory cache) ──────────────────────────────────────
+const _uc = {};
+
+function getUserById(id) { return _uc[id] || null; }
+
+function loadUser(id) {
+  if (_uc[id]) return Promise.resolve(_uc[id]);
+  const d = db();
+  if (!d) return Promise.resolve(null);
+  return d.ref(`users/${id}`).once('value').then(snap => {
+    if (snap.val()) _uc[id] = snap.val();
+    return _uc[id] || null;
+  });
 }
-function seedDemoMessage() {
-  if (localStorage.getItem('pb_demo_msg_v1')) return;
+
+function _putUser(u) {
+  if (!u) return;
+  _uc[u.id] = u;
+  db()?.ref(`users/${u.id}`).set(u);
+}
+
+function createUser(username, icon, bio, email) {
+  const u = { id: genId(), username, icon, bio: bio||'', email: email||'', createdAt: new Date().toISOString() };
+  _putUser(u);
+  _saveCurrentUser(u);
+  return u;
+}
+
+function updateCurrentUser(username, icon, bio, email) {
+  const cur = getCurrentUser();
+  if (!cur) return null;
+  const u = { ...cur, username, icon, bio: bio??cur.bio??'', email: email??cur.email??'' };
+  _putUser(u);
+  _saveCurrentUser(u);
+  return u;
+}
+
+// ── Posts ─────────────────────────────────────────────────────────────────
+function listenPosts(cb) {
+  const d = db();
+  if (!d) { cb([]); return () => {}; }
+  const ref = d.ref('posts').orderByChild('createdAt');
+  const fn = snap => {
+    const posts = [];
+    snap.forEach(c => posts.unshift({ id: c.key, ...c.val() }));
+    cb(posts);
+  };
+  ref.on('value', fn);
+  return () => ref.off('value', fn);
+}
+
+function createPost(content, tags, image) {
   const user = getCurrentUser();
-  if (!user) return;
-  const all = _getArr(KEYS.messages);
-  all.push({ id:'demo_msg_001', fromId:DEMO_USER_ID, toId:user.id, content:'はじめまして！さくらです🌸 よろしくね😊', createdAt:new Date(Date.now()-3600000*2).toISOString(), read:false });
-  _setArr(KEYS.messages, all);
-  localStorage.setItem('pb_demo_msg_v1', '1');
+  const d = db();
+  if (!d) return null;
+  const ref = d.ref('posts').push();
+  const post = {
+    authorId: user.id, authorName: user.username, authorIcon: user.icon,
+    content: content.slice(0, POST_MAX_LENGTH),
+    tags: tags||[], image: image||null,
+    likeCount: 0, commentCount: 0,
+    createdAt: new Date().toISOString()
+  };
+  ref.set(post);
+  return { id: ref.key, ...post };
+}
+
+function deletePost(postId, authorId) {
+  const u = getCurrentUser();
+  if (!u || u.id !== authorId) return;
+  const d = db();
+  if (!d) return;
+  d.ref(`posts/${postId}`).remove();
+  d.ref(`comments/${postId}`).remove();
+  d.ref(`likes/${postId}`).remove();
+}
+
+function listenPost(postId, cb) {
+  const d = db();
+  if (!d) { cb(null); return () => {}; }
+  const ref = d.ref(`posts/${postId}`);
+  ref.on('value', snap => cb(snap.val() ? { id: snap.key, ...snap.val() } : null));
+  return () => ref.off();
+}
+
+// ── Comments ──────────────────────────────────────────────────────────────
+function listenComments(postId, cb) {
+  const d = db();
+  if (!d) { cb([]); return () => {}; }
+  const ref = d.ref(`comments/${postId}`).orderByChild('createdAt');
+  ref.on('value', snap => {
+    const cmts = [];
+    snap.forEach(c => cmts.push({ id: c.key, ...c.val() }));
+    cb(cmts);
+  });
+  return () => ref.off();
+}
+
+function addComment(postId, content) {
+  const u = getCurrentUser();
+  const d = db();
+  if (!d) return;
+  d.ref(`comments/${postId}`).push({
+    authorId: u.id, authorName: u.username, authorIcon: u.icon,
+    content, createdAt: new Date().toISOString()
+  });
+  d.ref(`posts/${postId}/commentCount`).transaction(n => (n||0) + 1);
+}
+
+// ── Likes ─────────────────────────────────────────────────────────────────
+function listenLikes(postId, cb) {
+  const d = db();
+  if (!d) { cb(0, false); return () => {}; }
+  const ref = d.ref(`likes/${postId}`);
+  ref.on('value', snap => {
+    const u = getCurrentUser();
+    cb(snap.numChildren(), u ? snap.hasChild(u.id) : false);
+  });
+  return () => ref.off();
+}
+
+function toggleLike(postId) {
+  const u = getCurrentUser();
+  if (!u) return;
+  const d = db();
+  if (!d) return;
+  const ref = d.ref(`likes/${postId}/${u.id}`);
+  ref.once('value').then(snap => {
+    if (snap.exists()) {
+      ref.remove();
+      d.ref(`posts/${postId}/likeCount`).transaction(n => Math.max(0, (n||0) - 1));
+      d.ref(`userLikes/${u.id}/${postId}`).remove();
+    } else {
+      ref.set(true);
+      d.ref(`posts/${postId}/likeCount`).transaction(n => (n||0) + 1);
+      d.ref(`userLikes/${u.id}/${postId}`).set(true);
+    }
+  });
+}
+
+function loadMyLikes(cb) {
+  const u = getCurrentUser();
+  if (!u) { cb({}); return; }
+  const d = db();
+  if (!d) { cb({}); return; }
+  d.ref(`userLikes/${u.id}`).once('value').then(snap => cb(snap.val() || {}));
+}
+
+// ── Messages ──────────────────────────────────────────────────────────────
+function _ck(a, b) { return [a, b].sort().join('__'); }
+
+function listenMessages(partnerId, cb) {
+  const u = getCurrentUser();
+  if (!u) { cb([]); return () => {}; }
+  const d = db();
+  if (!d) { cb([]); return () => {}; }
+  const ref = d.ref(`messages/${_ck(u.id, partnerId)}`).orderByChild('createdAt');
+  ref.on('value', snap => {
+    const msgs = [];
+    snap.forEach(c => msgs.push({ id: c.key, ...c.val() }));
+    cb(msgs);
+  });
+  return () => ref.off();
+}
+
+function sendMessage(toId, content) {
+  const u = getCurrentUser();
+  if (!u) return;
+  const d = db();
+  if (!d) return;
+  const now = new Date().toISOString();
+  d.ref(`messages/${_ck(u.id, toId)}`).push({
+    fromId: u.id, fromName: u.username, fromIcon: u.icon,
+    toId, content, createdAt: now, read: false
+  });
+  d.ref(`convs/${u.id}/${toId}`).set({ lastContent: content, updatedAt: now, unread: 0 });
+  d.ref(`convs/${toId}/${u.id}`).transaction(cur => ({
+    lastContent: content, updatedAt: now, unread: (cur?.unread||0) + 1
+  }));
+}
+
+function markRead(partnerId) {
+  const u = getCurrentUser();
+  if (!u) return;
+  db()?.ref(`convs/${u.id}/${partnerId}/unread`).set(0);
+}
+
+function listenConversations(cb) {
+  const u = getCurrentUser();
+  if (!u) { cb([]); return () => {}; }
+  const d = db();
+  if (!d) { cb([]); return () => {}; }
+  const ref = d.ref(`convs/${u.id}`).orderByChild('updatedAt');
+  ref.on('value', snap => {
+    const convs = [];
+    snap.forEach(c => convs.unshift({ partnerId: c.key, ...c.val() }));
+    cb(convs);
+  });
+  return () => ref.off();
+}
+
+function listenUnread(cb) {
+  const u = getCurrentUser();
+  if (!u) { cb(0); return () => {}; }
+  const d = db();
+  if (!d) { cb(0); return () => {}; }
+  const ref = d.ref(`convs/${u.id}`);
+  ref.on('value', snap => {
+    let n = 0;
+    snap.forEach(c => { n += (c.val().unread||0); });
+    cb(n);
+  });
+  return () => ref.off();
 }

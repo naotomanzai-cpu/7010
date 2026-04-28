@@ -6,8 +6,7 @@
   <title>プロフィール - Singu-Link</title>
   <link rel="stylesheet" href="style.css">
   <style>
-    .icon-grid { grid-template-columns: repeat(6, 1fr); }
-    .email-field { position: relative; }
+    .icon-grid { grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); }
     .email-ok  { color: #10B981; font-size: 13px; margin-top: 4px; }
     .email-err { color: #EF4444; font-size: 13px; margin-top: 4px; }
     .domain-badge {
@@ -70,27 +69,18 @@
     </div>
 
     <button class="btn btn-primary" id="saveBtn">保存する</button>
-
-    <div id="profileActions" style="margin-top:16px;display:none">
-      <button class="btn btn-secondary" onclick="doLogout()">🚪 別のアカウントに切り替える</button>
-    </div>
   </div>
 </main>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script src="app.js"></script>
 <script>
   const params      = new URLSearchParams(location.search);
   const isSetup     = params.get('setup') === '1';
   const nextUrl     = params.get('next') || 'index.html';
 
-  let allUsers    = getUsers();
   let currentUser = getCurrentUser();
-  // 誰かログアウトした状態でも実ユーザーを復元
-  if (!currentUser && allUsers.length > 0) {
-    const real = allUsers.find(u => u.id !== 'demo_sakura_001');
-    if (real) { _setOne(KEYS.currentUser, real); currentUser = real; }
-  }
-
   let selectedIcon = currentUser?.icon || ICONS[0];
 
   // ── ドメインバッジ ──────────────────────────────────────────────────────
@@ -107,7 +97,6 @@
     document.getElementById('bioInput').value        = currentUser.bio || '';
     document.getElementById('bioCount').textContent  = (currentUser.bio || '').length;
     document.getElementById('emailInput').value      = currentUser.email || '';
-    document.getElementById('profileActions').style.display = 'block';
   }
 
   // ── アイコングリッド ──────────────────────────────────────────────────
@@ -157,7 +146,6 @@
     if (!name) { alert('ニックネームを入力してください'); return; }
     if (name.length < 2) { alert('ニックネームは2文字以上で入力してください'); return; }
 
-    // ドメインチェック
     if (SCHOOL_DOMAIN && email && !email.endsWith(SCHOOL_DOMAIN)) {
       alert(`学校のGmailアドレス（${SCHOOL_DOMAIN}）を入力してください`);
       return;
@@ -167,20 +155,10 @@
       return;
     }
 
-    // 保存
     if (currentUser) {
-      const users = getUsers();
-      const idx = users.findIndex(u => u.id === currentUser.id);
-      const updated = { ...currentUser, username: name, icon: selectedIcon, bio, email };
-      if (idx !== -1) users[idx] = updated;
-      _setArr(KEYS.users, users);
-      _setOne(KEYS.currentUser, updated);
+      updateCurrentUser(name, selectedIcon, bio, email);
     } else {
-      const users = getUsers();
-      const user  = { id: genId(), username: name, icon: selectedIcon, bio, email, createdAt: new Date().toISOString() };
-      users.push(user);
-      _setArr(KEYS.users, users);
-      _setOne(KEYS.currentUser, user);
+      createUser(name, selectedIcon, bio, email);
     }
 
     location.href = isSetup ? decodeURIComponent(nextUrl) : 'index.html';
@@ -189,13 +167,6 @@
   document.getElementById('usernameInput').addEventListener('keydown', e => {
     if (e.key === 'Enter') document.getElementById('saveBtn').click();
   });
-
-  // ── ログアウト ────────────────────────────────────────────────────────
-  window.doLogout = function() {
-    if (!confirm('ログアウトしますか？')) return;
-    logout();
-    location.href = 'profile.html?setup=1';
-  };
 </script>
 </body>
 </html>

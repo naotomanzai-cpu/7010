@@ -25,6 +25,8 @@
   </div>
 </main>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script src="app.js"></script>
 <script>
   const params      = new URLSearchParams(location.search);
@@ -33,36 +35,48 @@
 
   if (currentUser) document.getElementById('profileBtn').textContent = currentUser.icon;
 
-  function renderPage() {
-    const wrap = document.getElementById('pageWrap');
-    const post = getPostById(postId);
+  let currentPost = null;
 
+  // ── リスナー起動 ───────────────────────────────────────────────────────
+  listenPost(postId, post => {
     if (!post) {
-      wrap.innerHTML = `<div class="empty-state"><p>投稿が見つかりません</p></div>`;
+      document.getElementById('pageWrap').innerHTML = `<div class="empty-state"><p>投稿が見つかりません</p></div>`;
       return;
     }
+    currentPost = post;
+    renderPostContent(post);
+  });
 
-    const author    = getUserById(post.authorId);
-    const comments  = getComments(postId);
-    const liked     = hasLiked(postId);
-    const likeCount = getLikeCount(postId);
-    const isOwn     = currentUser && currentUser.id === post.authorId;
-    const tagsHtml  = (post.tags || []).map(t => tagChipStop(t)).join('');
-
-    const commentsHtml = comments.length > 0
-      ? comments.map(c => {
-          const u = getUserById(c.authorId);
-          return `
-            <div class="comment-item">
-              <div class="avatar sm">${esc(u?.icon || '👤')}</div>
-              <div class="comment-body">
-                <span class="comment-author">${esc(u?.username || '匿名')}</span>
-                <span class="comment-time">${timeAgo(c.createdAt)}</span>
-                <div class="comment-text">${esc(c.content)}</div>
-              </div>
-            </div>`;
-        }).join('')
+  listenComments(postId, comments => {
+    const el = document.getElementById('commentsList');
+    const countEl = document.getElementById('commentCount');
+    if (!el) return;
+    if (countEl) countEl.textContent = comments.length;
+    el.innerHTML = comments.length > 0
+      ? comments.map(c => `
+          <div class="comment-item">
+            <div class="avatar sm">${esc(c.authorIcon||'👤')}</div>
+            <div class="comment-body">
+              <span class="comment-author">${esc(c.authorName||'匿名')}</span>
+              <span class="comment-time">${timeAgo(c.createdAt)}</span>
+              <div class="comment-text">${esc(c.content)}</div>
+            </div>
+          </div>`).join('')
       : `<p style="color:var(--text-muted);font-size:14px;padding:8px 0">まだコメントはありません</p>`;
+  });
+
+  listenLikes(postId, (count, liked) => {
+    const likeBtn   = document.getElementById('likeBtn');
+    const likeCount = document.getElementById('likeCount');
+    if (likeBtn)   likeBtn.classList.toggle('liked', liked);
+    if (likeCount) likeCount.textContent = count;
+  });
+
+  // ── 投稿カード描画 ─────────────────────────────────────────────────────
+  function renderPostContent(post) {
+    const wrap   = document.getElementById('pageWrap');
+    const isOwn  = currentUser && currentUser.id === post.authorId;
+    const tagsHtml = (post.tags||[]).map(t => tagChipStop(t)).join('');
 
     const commentFormHtml = currentUser
       ? `<div class="comment-form">
@@ -79,9 +93,9 @@
 
       <div class="detail-card">
         <div class="post-header">
-          <div class="avatar lg">${esc(author?.icon || '👤')}</div>
+          <div class="avatar lg">${esc(post.authorIcon||'👤')}</div>
           <div class="post-meta">
-            <div class="post-author">${esc(author?.username || '匿名')}</div>
+            <div class="post-author">${esc(post.authorName||'匿名')}</div>
             <div class="post-time">${timeAgo(post.createdAt)}</div>
           </div>
           <div style="display:flex;gap:8px;margin-left:auto">
@@ -101,29 +115,20 @@
         ${tagsHtml ? `<div class="post-tags">${tagsHtml}</div>` : ''}
 
         <div style="display:flex;gap:10px;align-items:center;margin-top:14px">
-          <button class="like-btn-detail ${liked ? 'liked' : ''}" id="likeBtn">
+          <button class="like-btn-detail" id="likeBtn" onclick="handleLike()">
             <span class="like-heart">♥</span>
-            <span id="likeCount">${likeCount}</span> いいね
+            <span id="likeCount">0</span> いいね
           </button>
         </div>
       </div>
 
       <div class="detail-card">
-        <div class="section-label">💬 コメント（${comments.length}件）</div>
-        <div id="commentsList">${commentsHtml}</div>
+        <div class="section-label">💬 コメント（<span id="commentCount">0</span>件）</div>
+        <div id="commentsList"><p style="color:var(--text-muted);font-size:14px">⏳ 読み込み中...</p></div>
         ${commentFormHtml}
       </div>
     `;
 
-    // Like button
-    document.getElementById('likeBtn').addEventListener('click', () => {
-      if (!currentUser) { location.href = 'profile.html?setup=1'; return; }
-      const isLiked = toggleLike(postId);
-      document.getElementById('likeBtn').classList.toggle('liked', isLiked);
-      document.getElementById('likeCount').textContent = getLikeCount(postId);
-    });
-
-    // Comment submit
     if (currentUser) {
       document.getElementById('commentSubmitBtn').addEventListener('click', submitComment);
       document.getElementById('commentTa').addEventListener('keydown', e => {
@@ -132,23 +137,24 @@
     }
   }
 
+  function handleLike() {
+    if (!currentUser) { location.href = 'profile.html?setup=1'; return; }
+    toggleLike(postId);
+  }
+
   function submitComment() {
-    const ta   = document.getElementById('commentTa');
+    const ta = document.getElementById('commentTa');
     const text = ta?.value.trim();
     if (!text) return;
     addComment(postId, text);
     ta.value = '';
-    renderPage();
   }
 
   window.deleteThisPost = function() {
     if (!confirm('この投稿を削除しますか？')) return;
-    const posts = getPosts().filter(p => !(p.id === postId && p.authorId === currentUser?.id));
-    _setArr(KEYS.posts, posts);
+    deletePost(postId, currentUser?.id);
     location.href = 'index.html';
   };
-
-  renderPage();
 </script>
 </body>
 </html>

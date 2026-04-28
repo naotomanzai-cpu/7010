@@ -37,7 +37,7 @@
     </div>
     <div class="list-meta">
       <span class="list-count" id="listCount"></span>
-      <select class="sort-select" id="sortSelect" onchange="renderPosts()">
+      <select class="sort-select" id="sortSelect" onchange="applyFilters()">
         <option value="newest">新しい順</option>
         <option value="popular">人気順（♥＋💬）</option>
       </select>
@@ -59,32 +59,46 @@
   </div>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script src="app.js"></script>
 <script>
   let activeTag = '';
   let selectedTags = [];
   let selectedImageData = null;
+  let allPosts = [];
+  let myLikes = {};
 
   const urlParams = new URLSearchParams(location.search);
   if (urlParams.get('tag')) activeTag = urlParams.get('tag');
 
   function init() {
-    seedDemoData();
-    seedDemoMessage();
     updateHeader();
     renderCompose();
     renderTagFilter();
-    renderPosts();
+
+    // リアルタイムで未読数を更新
+    listenUnread(count => {
+      const badge = document.getElementById('unreadBadge');
+      if (count > 0) { badge.textContent = count > 9 ? '9+' : count; badge.classList.remove('hidden'); }
+      else badge.classList.add('hidden');
+    });
+
+    // 自分のいいね済み投稿を読み込んでから投稿リストを購読
+    loadMyLikes(likes => {
+      myLikes = likes;
+      listenPosts(posts => {
+        allPosts = posts;
+        applyFilters();
+      });
+    });
+
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
   }
 
   function updateHeader() {
     const user = getCurrentUser();
     document.getElementById('profileBtn').textContent = user ? user.icon : '👤';
-    const count = getUnreadCount();
-    const badge = document.getElementById('unreadBadge');
-    if (count > 0) { badge.textContent = count > 9 ? '9+' : count; badge.classList.remove('hidden'); }
-    else { badge.classList.add('hidden'); }
   }
 
   function renderCompose() {
@@ -165,7 +179,7 @@
     selectedTags = [];
     selectedImageData = null;
     renderCompose();
-    renderPosts();
+    // Firebase リスナーが自動でフィードを更新する
   }
 
   function renderTagFilter() {
@@ -173,28 +187,35 @@
     bar.innerHTML = `<span class="filter-chip all ${activeTag===''?'active':''}" onclick="filterByTag('')">すべて</span>` +
       PRESET_TAGS.map(t => `<span class="filter-chip ${activeTag===t?'active':''}" onclick="filterByTag('${esc(t)}')">#${esc(t)}</span>`).join('');
   }
-  function filterByTag(tag) { activeTag = tag; renderTagFilter(); renderPosts(); }
+  function filterByTag(tag) { activeTag = tag; renderTagFilter(); applyFilters(); }
 
-  function renderPosts() {
-    const list   = document.getElementById('postList');
+  function applyFilters() {
     const sortBy = document.getElementById('sortSelect').value;
-    let posts = getPosts();
     const q = document.getElementById('searchInput')?.value.trim().toLowerCase();
+    let posts = [...allPosts];
     if (q) posts = posts.filter(p => p.content.toLowerCase().includes(q) || (p.tags||[]).some(t => t.includes(q)));
     if (activeTag) posts = posts.filter(p => (p.tags||[]).includes(activeTag));
-    if (sortBy === 'popular') posts.sort((a,b) => getPopularityScore(b.id) - getPopularityScore(a.id));
+    if (sortBy === 'popular') posts.sort((a,b) => ((b.likeCount||0)+(b.commentCount||0)) - ((a.likeCount||0)+(a.commentCount||0)));
     else posts.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+    renderPostList(posts);
+  }
+
+  function renderPostList(posts) {
+    const list = document.getElementById('postList');
     document.getElementById('listCount').textContent = `${posts.length}件`;
+    if (posts.length === 0) {
+      list.innerHTML = `<div class="empty-state"><p>投稿がありません</p></div>`;
+      return;
+    }
     list.innerHTML = posts.map(p => {
-      const author = getUserById(p.authorId);
-      const liked  = hasLiked(p.id);
+      const liked = myLikes[p.id] || false;
       const tagsHtml = (p.tags||[]).map(t => tagChipStop(t)).join('');
       return `
         <a class="post-card" href="post.html?id=${p.id}">
           <div class="post-header">
-            <div class="avatar">${esc(author?.icon||'👤')}</div>
+            <div class="avatar">${esc(p.authorIcon||'👤')}</div>
             <div class="post-meta">
-              <div class="post-author">${esc(author?.username||'匿名')}</div>
+              <div class="post-author">${esc(p.authorName||'匿名')}</div>
               <div class="post-time">${timeAgo(p.createdAt)}</div>
             </div>
           </div>
@@ -203,18 +224,21 @@
           ${tagsHtml ? `<div class="post-tags">${tagsHtml}</div>` : ''}
           <div class="post-footer">
             <button class="like-btn-card ${liked?'liked':''}" onclick="event.preventDefault();handleLikeClick(this,'${p.id}')">
-              ♥ <span class="like-num">${getLikeCount(p.id)}</span>
+              ♥ <span class="like-num">${p.likeCount||0}</span>
             </button>
-            <span class="post-stat">💬 ${getComments(p.id).length}</span>
+            <span class="post-stat">💬 ${p.commentCount||0}</span>
           </div>
         </a>`;
     }).join('');
   }
 
   function handleLikeClick(btn, postId) {
-    const liked = toggleLike(postId);
-    btn.classList.toggle('liked', liked);
-    btn.querySelector('.like-num').textContent = getLikeCount(postId);
+    const isLiked = btn.classList.contains('liked');
+    const numEl = btn.querySelector('.like-num');
+    btn.classList.toggle('liked');
+    numEl.textContent = Math.max(0, parseInt(numEl.textContent) + (isLiked ? -1 : 1));
+    if (isLiked) delete myLikes[postId]; else myLikes[postId] = true;
+    toggleLike(postId);
   }
 
   function openTagPicker() {
@@ -233,7 +257,7 @@
     document.getElementById('tagModal').classList.add('hidden');
     document.getElementById('composeTags').innerHTML = selectedTags.map(t => tagChip(t, false)).join('');
   };
-  document.getElementById('searchInput').oninput = () => renderPosts();
+  document.getElementById('searchInput').oninput = () => applyFilters();
   window.scrollTagBar = (dir) => document.getElementById('tagFilter').scrollBy({ left: dir * 200, behavior: 'smooth' });
 
   init();
