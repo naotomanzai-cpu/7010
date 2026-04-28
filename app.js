@@ -7,13 +7,13 @@ const SCHOOL_DOMAIN = '';
 //  2. 「Realtime Database」を「テストモード」で有効化
 //  3. プロジェクトの設定 → マイアプリ → Web(</>)アプリ追加 → config をコピーして貼り付け
 const FIREBASE_CONFIG = {
-  apiKey: "",
-  authDomain: "",
-  databaseURL: "",   // ← 必須: https://YOUR-PROJECT-default-rtdb.firebaseio.com
-  projectId: "",
-  storageBucket: "",
-  messagingSenderId: "",
-  appId: ""
+  apiKey: "AIzaSyCbTsxAlEbxBg4KHSNurEy8geCsxOznP6A",
+  authDomain: "singu-c47a1.firebaseapp.com",
+  databaseURL: "https://singu-c47a1-default-rtdb.firebaseio.com",
+  projectId: "singu-c47a1",
+  storageBucket: "singu-c47a1.firebasestorage.app",
+  messagingSenderId: "325387486987",
+  appId: "1:325387486987:web:a4cda9f13965622509440e"
 };
 
 const POST_MAX_LENGTH = 150;
