@@ -145,7 +145,7 @@
     reader.onload = function(e) {
       const img = new Image();
       img.onload = function() {
-        const MAX = 900;
+        const MAX = 600;
         let w = img.width, h = img.height;
         if (w > MAX || h > MAX) {
           if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
@@ -154,7 +154,12 @@
         const canvas = document.createElement('canvas');
         canvas.width = w; canvas.height = h;
         canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        selectedImageData = canvas.toDataURL('image/jpeg', 0.75);
+        selectedImageData = canvas.toDataURL('image/jpeg', 0.6);
+        if (selectedImageData.length > 500000) {
+          alert('画像が大きすぎます。もっと小さい画像を選んでください。');
+          selectedImageData = null;
+          return;
+        }
         document.getElementById('imgPreview').src = selectedImageData;
         document.getElementById('imgPreviewWrap').style.display = 'block';
         document.getElementById('photoBtn').classList.add('has-img');

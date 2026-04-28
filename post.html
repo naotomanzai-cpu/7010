@@ -35,47 +35,33 @@
 
   if (currentUser) document.getElementById('profileBtn').textContent = currentUser.icon;
 
-  let currentPost = null;
+  let postReady = false; // 投稿DOMが描画されたか
 
-  // ── リスナー起動 ───────────────────────────────────────────────────────
+  // ── 投稿を購読（最初に描画してからコメント/いいねリスナーを起動） ─────
   listenPost(postId, post => {
     if (!post) {
       document.getElementById('pageWrap').innerHTML = `<div class="empty-state"><p>投稿が見つかりません</p></div>`;
       return;
     }
-    currentPost = post;
     renderPostContent(post);
+
+    if (!postReady) {
+      postReady = true;
+      // 投稿DOMが存在してからリスナーを起動
+      listenComments(postId, renderComments);
+      listenLikes(postId, (count, liked) => {
+        const btn = document.getElementById('likeBtn');
+        const cnt = document.getElementById('likeCount');
+        if (btn) btn.classList.toggle('liked', liked);
+        if (cnt) cnt.textContent = count;
+      });
+    }
   });
 
-  listenComments(postId, comments => {
-    const el = document.getElementById('commentsList');
-    const countEl = document.getElementById('commentCount');
-    if (!el) return;
-    if (countEl) countEl.textContent = comments.length;
-    el.innerHTML = comments.length > 0
-      ? comments.map(c => `
-          <div class="comment-item">
-            <div class="avatar sm">${esc(c.authorIcon||'👤')}</div>
-            <div class="comment-body">
-              <span class="comment-author">${esc(c.authorName||'匿名')}</span>
-              <span class="comment-time">${timeAgo(c.createdAt)}</span>
-              <div class="comment-text">${esc(c.content)}</div>
-            </div>
-          </div>`).join('')
-      : `<p style="color:var(--text-muted);font-size:14px;padding:8px 0">まだコメントはありません</p>`;
-  });
-
-  listenLikes(postId, (count, liked) => {
-    const likeBtn   = document.getElementById('likeBtn');
-    const likeCount = document.getElementById('likeCount');
-    if (likeBtn)   likeBtn.classList.toggle('liked', liked);
-    if (likeCount) likeCount.textContent = count;
-  });
-
-  // ── 投稿カード描画 ─────────────────────────────────────────────────────
+  // ── 投稿カード描画 ────────────────────────────────────────────────────
   function renderPostContent(post) {
-    const wrap   = document.getElementById('pageWrap');
-    const isOwn  = currentUser && currentUser.id === post.authorId;
+    const wrap  = document.getElementById('pageWrap');
+    const isOwn = currentUser && currentUser.id === post.authorId;
     const tagsHtml = (post.tags||[]).map(t => tagChipStop(t)).join('');
 
     const commentFormHtml = currentUser
@@ -103,15 +89,13 @@
               ? `<button class="msg-btn" onclick="location.href='messages.html?with=${esc(post.authorId)}'">💬 DM</button>`
               : ''}
             ${isOwn
-              ? `<button class="delete-btn" onclick="deleteThisPost()">🗑 削除</button>`
+              ? `<button class="delete-btn" onclick="deleteThisPost('${esc(post.authorId)}')">🗑 削除</button>`
               : ''}
           </div>
         </div>
 
         <div class="detail-full-content">${esc(post.content)}</div>
-
         ${post.image ? `<img src="${esc(post.image)}" class="post-image-detail">` : ''}
-
         ${tagsHtml ? `<div class="post-tags">${tagsHtml}</div>` : ''}
 
         <div style="display:flex;gap:10px;align-items:center;margin-top:14px">
@@ -137,6 +121,25 @@
     }
   }
 
+  // ── コメント描画 ──────────────────────────────────────────────────────
+  function renderComments(comments) {
+    const el  = document.getElementById('commentsList');
+    const cnt = document.getElementById('commentCount');
+    if (!el) return;
+    if (cnt) cnt.textContent = comments.length;
+    el.innerHTML = comments.length > 0
+      ? comments.map(c => `
+          <div class="comment-item">
+            <div class="avatar sm">${esc(c.authorIcon||'👤')}</div>
+            <div class="comment-body">
+              <span class="comment-author">${esc(c.authorName||'匿名')}</span>
+              <span class="comment-time">${timeAgo(c.createdAt)}</span>
+              <div class="comment-text">${esc(c.content)}</div>
+            </div>
+          </div>`).join('')
+      : `<p style="color:var(--text-muted);font-size:14px;padding:8px 0">まだコメントはありません</p>`;
+  }
+
   function handleLike() {
     if (!currentUser) { location.href = 'profile.html?setup=1'; return; }
     toggleLike(postId);
@@ -150,9 +153,9 @@
     ta.value = '';
   }
 
-  window.deleteThisPost = function() {
+  window.deleteThisPost = function(authorId) {
     if (!confirm('この投稿を削除しますか？')) return;
-    deletePost(postId, currentUser?.id);
+    deletePost(postId, authorId);
     location.href = 'index.html';
   };
 </script>
