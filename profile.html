@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>プロフィール - Singu-Link</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .icon-grid { grid-template-columns: repeat(6, 1fr); }
+    .email-field { position: relative; }
+    .email-ok  { color: #10B981; font-size: 13px; margin-top: 4px; }
+    .email-err { color: #EF4444; font-size: 13px; margin-top: 4px; }
+    .domain-badge {
+      display: inline-block;
+      background: #D1FAE5;
+      color: #065F46;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 10px;
+      margin-left: 6px;
+    }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-inner">
+    <a href="index.html" class="logo">📌 Singu-Link</a>
+    <div style="flex:1"></div>
+    <nav class="nav-btns">
+      <a class="icon-btn" href="messages.html" title="メッセージ">💬</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="profile-wrap">
+    <div class="page-title" id="pageTitle">プロフィール設定</div>
+
+    <!-- ニックネーム -->
+    <div class="form-group">
+      <label class="form-label">ニックネーム</label>
+      <input class="form-input" id="usernameInput" placeholder="例: さくら" maxlength="20">
+    </div>
+
+    <!-- 学校メールアドレス -->
+    <div class="form-group" id="emailGroup">
+      <label class="form-label">
+        学校のGmailアドレス
+        <span class="domain-badge" id="domainBadge" style="display:none"></span>
+      </label>
+      <input class="form-input" id="emailInput" type="email" placeholder="例: taro@school.ed.jp">
+      <div id="emailStatus" style="min-height:18px;margin-top:4px"></div>
+    </div>
+
+    <!-- アイコン選択 -->
+    <div class="form-group">
+      <label class="form-label">アイコンを選ぶ（30種類）</label>
+      <div class="icon-grid" id="iconGrid"></div>
+    </div>
+
+    <div class="icon-preview" id="iconPreview">🐱</div>
+
+    <!-- 自己紹介 -->
+    <div class="form-group">
+      <label class="form-label">自己紹介メッセージ</label>
+      <textarea class="form-input" id="bioInput" rows="3" maxlength="80" placeholder="自己紹介を書いてみよう！"></textarea>
+      <div class="char-counter"><span id="bioCount">0</span> / 80</div>
+    </div>
+
+    <button class="btn btn-primary" id="saveBtn">保存する</button>
+
+    <div id="profileActions" style="margin-top:16px;display:none">
+      <button class="btn btn-secondary" onclick="doLogout()">🚪 別のアカウントに切り替える</button>
+    </div>
+  </div>
+</main>
+
+<script src="app.js"></script>
+<script>
+  const params      = new URLSearchParams(location.search);
+  const isSetup     = params.get('setup') === '1';
+  const nextUrl     = params.get('next') || 'index.html';
+
+  let allUsers    = getUsers();
+  let currentUser = getCurrentUser();
+  // 誰かログアウトした状態でも実ユーザーを復元
+  if (!currentUser && allUsers.length > 0) {
+    const real = allUsers.find(u => u.id !== 'demo_sakura_001');
+    if (real) { _setOne(KEYS.currentUser, real); currentUser = real; }
+  }
+
+  let selectedIcon = currentUser?.icon || ICONS[0];
+
+  // ── ドメインバッジ ──────────────────────────────────────────────────────
+  const badge = document.getElementById('domainBadge');
+  if (SCHOOL_DOMAIN) {
+    badge.textContent = SCHOOL_DOMAIN + ' のみ';
+    badge.style.display = 'inline-block';
+  }
+
+  // ── 初期値セット ──────────────────────────────────────────────────────
+  if (currentUser) {
+    document.getElementById('pageTitle').textContent = 'プロフィール編集';
+    document.getElementById('usernameInput').value   = currentUser.username;
+    document.getElementById('bioInput').value        = currentUser.bio || '';
+    document.getElementById('bioCount').textContent  = (currentUser.bio || '').length;
+    document.getElementById('emailInput').value      = currentUser.email || '';
+    document.getElementById('profileActions').style.display = 'block';
+  }
+
+  // ── アイコングリッド ──────────────────────────────────────────────────
+  document.getElementById('iconPreview').textContent = selectedIcon;
+
+  const grid = document.getElementById('iconGrid');
+  ICONS.forEach(icon => {
+    const btn = document.createElement('button');
+    btn.type      = 'button';
+    btn.className = `icon-option${icon === selectedIcon ? ' selected' : ''}`;
+    btn.textContent = icon;
+    btn.addEventListener('click', () => {
+      selectedIcon = icon;
+      grid.querySelectorAll('.icon-option').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      document.getElementById('iconPreview').textContent = icon;
+    });
+    grid.appendChild(btn);
+  });
+
+  // ── メールチェック ────────────────────────────────────────────────────
+  function checkEmail(val) {
+    const status = document.getElementById('emailStatus');
+    if (!val) { status.innerHTML = ''; return true; }
+    if (!val.includes('@')) { status.innerHTML = `<span class="email-err">正しいメールアドレスを入力してください</span>`; return false; }
+    if (SCHOOL_DOMAIN && !val.endsWith(SCHOOL_DOMAIN)) {
+      status.innerHTML = `<span class="email-err">❌ ${SCHOOL_DOMAIN} のアドレスのみ使用できます</span>`;
+      return false;
+    }
+    status.innerHTML = `<span class="email-ok">✅ OK</span>`;
+    return true;
+  }
+
+  document.getElementById('emailInput').addEventListener('input', e => checkEmail(e.target.value.trim()));
+
+  // ── 自己紹介カウンター ────────────────────────────────────────────────
+  document.getElementById('bioInput').addEventListener('input', function() {
+    document.getElementById('bioCount').textContent = this.value.length;
+  });
+
+  // ── 保存 ─────────────────────────────────────────────────────────────
+  document.getElementById('saveBtn').addEventListener('click', () => {
+    const name  = document.getElementById('usernameInput').value.trim();
+    const email = document.getElementById('emailInput').value.trim().toLowerCase();
+    const bio   = document.getElementById('bioInput').value.trim();
+
+    if (!name) { alert('ニックネームを入力してください'); return; }
+    if (name.length < 2) { alert('ニックネームは2文字以上で入力してください'); return; }
+
+    // ドメインチェック
+    if (SCHOOL_DOMAIN && email && !email.endsWith(SCHOOL_DOMAIN)) {
+      alert(`学校のGmailアドレス（${SCHOOL_DOMAIN}）を入力してください`);
+      return;
+    }
+    if (SCHOOL_DOMAIN && !email) {
+      alert(`学校のGmailアドレス（${SCHOOL_DOMAIN}）を入力してください`);
+      return;
+    }
+
+    // 保存
+    if (currentUser) {
+      const users = getUsers();
+      const idx = users.findIndex(u => u.id === currentUser.id);
+      const updated = { ...currentUser, username: name, icon: selectedIcon, bio, email };
+      if (idx !== -1) users[idx] = updated;
+      _setArr(KEYS.users, users);
+      _setOne(KEYS.currentUser, updated);
+    } else {
+      const users = getUsers();
+      const user  = { id: genId(), username: name, icon: selectedIcon, bio, email, createdAt: new Date().toISOString() };
+      users.push(user);
+      _setArr(KEYS.users, users);
+      _setOne(KEYS.currentUser, user);
+    }
+
+    location.href = isSetup ? decodeURIComponent(nextUrl) : 'index.html';
+  });
+
+  document.getElementById('usernameInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('saveBtn').click();
+  });
+
+  // ── ログアウト ────────────────────────────────────────────────────────
+  window.doLogout = function() {
+    if (!confirm('ログアウトしますか？')) return;
+    logout();
+    location.href = 'profile.html?setup=1';
+  };
+</script>
+</body>
+</html>

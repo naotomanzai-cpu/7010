@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>メッセージ - Singu-Link</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="header">
+  <div class="header-inner">
+    <a href="index.html" class="logo">📌 Singu-Link</a>
+    <div style="flex:1"></div>
+    <nav class="nav-btns">
+      <a class="icon-btn" href="profile.html" id="profileBtn" title="プロフィール">👤</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="msg-layout">
+    <div class="conv-panel" id="convPanel">
+      <div class="conv-panel-title">💬 メッセージ</div>
+      <div id="convList"></div>
+    </div>
+    <div class="chat-panel" id="chatPanel">
+      <div class="no-chat">
+        <div style="font-size:48px">💬</div>
+        <p>会話を選んでください</p>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="app.js"></script>
+<script>
+  const currentUser = getCurrentUser();
+  if (!currentUser) { location.href = 'profile.html?setup=1&next=messages.html'; }
+
+  const params        = new URLSearchParams(location.search);
+  let activePartnerId = params.get('with') || null;
+
+  document.getElementById('profileBtn').textContent = currentUser?.icon || '👤';
+
+  // ── 会話リスト ─────────────────────────────────────────────────────────
+  function renderConvList() {
+    const convs = getConversations();
+    const list  = document.getElementById('convList');
+    list.innerHTML = '';
+
+    // ?with= で開いた相手がまだ会話一覧にない場合も先頭に表示
+    const inList = convs.some(c => c.partnerId === activePartnerId);
+    if (activePartnerId && !inList) {
+      const partner = getUserById(activePartnerId);
+      if (partner) appendConvItem(list, activePartnerId, partner, null, true, 0);
+    }
+
+    if (convs.length === 0 && !activePartnerId) {
+      list.innerHTML = `
+        <div class="empty-state" style="padding:30px 16px">
+          <div style="font-size:36px;margin-bottom:8px">📭</div>
+          <p style="font-size:13px">メッセージはありません</p>
+        </div>`;
+      return;
+    }
+
+    convs.forEach(conv => {
+      const partner = getUserById(conv.partnerId);
+      const unread  = _getArr(KEYS.messages).filter(
+        m => m.fromId === conv.partnerId && m.toId === currentUser.id && !m.read
+      ).length;
+      appendConvItem(list, conv.partnerId, partner, conv.lastMessage, activePartnerId === conv.partnerId, unread);
+    });
+  }
+
+  function appendConvItem(list, partnerId, partner, lastMsg, isActive, unread) {
+    const el = document.createElement('div');
+    el.className = `conv-item${isActive ? ' active' : ''}`;
+    el.innerHTML = `
+      <div class="avatar sm">${esc(partner?.icon || '👤')}</div>
+      <div class="conv-info">
+        <div class="conv-name">${esc(partner?.username || '不明')}</div>
+        <div class="conv-preview">${lastMsg ? esc(lastMsg.content) : '新しい会話'}</div>
+      </div>
+      ${unread > 0 ? `<span class="badge" style="position:static">${unread}</span>` : ''}
+    `;
+    el.addEventListener('click', () => openConv(partnerId));
+    list.appendChild(el);
+  }
+
+  // ── チャット ───────────────────────────────────────────────────────────
+  function openConv(partnerId) {
+    activePartnerId = partnerId;
+    markRead(partnerId);
+    renderConvList();
+    renderChat();
+    // URL更新（戻るボタン対応）
+    const url = new URL(location.href);
+    url.searchParams.set('with', partnerId);
+    history.replaceState({}, '', url);
+  }
+
+  function renderChat() {
+    const panel = document.getElementById('chatPanel');
+    if (!activePartnerId) {
+      panel.innerHTML = `<div class="no-chat"><div style="font-size:48px">💬</div><p>会話を選んでください</p></div>`;
+      return;
+    }
+
+    const partner  = getUserById(activePartnerId);
+    const messages = getMessages(activePartnerId);
+
+    const msgsHtml = messages.length > 0
+      ? messages.map(m => {
+          const mine = m.fromId === currentUser.id;
+          return `
+            <div class="msg-wrap ${mine ? 'mine' : 'theirs'}">
+              <div class="msg-bubble ${mine ? 'mine' : 'theirs'}">${esc(m.content)}</div>
+              <div class="msg-time">${timeAgo(m.createdAt)}</div>
+            </div>`;
+        }).join('')
+      : `<div style="text-align:center;color:var(--text-muted);font-size:14px;padding:24px">メッセージを送ってみましょう</div>`;
+
+    panel.innerHTML = `
+      <div class="chat-header">
+        <div class="avatar sm">${esc(partner?.icon || '👤')}</div>
+        <div style="font-weight:700;font-size:15px">${esc(partner?.username || '不明')}</div>
+      </div>
+      <div class="chat-messages" id="chatMessages">${msgsHtml}</div>
+      <div class="chat-input-area">
+        <input class="chat-input" id="msgInput" placeholder="メッセージを入力..." autocomplete="off">
+        <button class="send-btn" id="sendBtn" title="送信">➤</button>
+      </div>
+    `;
+
+    // 最下部にスクロール
+    const chatEl = document.getElementById('chatMessages');
+    chatEl.scrollTop = chatEl.scrollHeight;
+
+    document.getElementById('sendBtn').addEventListener('click', sendMsg);
+    document.getElementById('msgInput').addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+    });
+    document.getElementById('msgInput').focus();
+  }
+
+  // ── 送信 ───────────────────────────────────────────────────────────────
+  function sendMsg() {
+    const input = document.getElementById('msgInput');
+    const text  = input?.value.trim();
+    if (!text || !activePartnerId) return;
+    sendMessage(activePartnerId, text);
+    input.value = '';
+    renderChat();
+    renderConvList();
+  }
+
+  // ── 起動 ───────────────────────────────────────────────────────────────
+  renderConvList();
+  if (activePartnerId) {
+    markRead(activePartnerId);
+    renderChat();
+  }
+</script>
+</body>
+</html>

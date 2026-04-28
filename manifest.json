@@ -1,0 +1,19 @@
+{
+  "name": "Singu-Link 校内掲示板",
+  "short_name": "Singu-Link",
+  "description": "学校の掲示板アプリ",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F0F2F5",
+  "theme_color": "#5B4CF5",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
