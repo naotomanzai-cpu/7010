@@ -1,4 +1,4 @@
-const CACHE = 'singulink-v1';
+const CACHE = 'singulink-v3';
 const ASSETS = [
   './index.html',
   './post.html',
@@ -20,10 +20,18 @@ self.addEventListener('activate', e => {
       Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
     )
   );
+  self.clients.claim();
 });
 
+// ネットワーク優先：常に最新版を取得し、失敗時のみキャッシュを使う
 self.addEventListener('fetch', e => {
   e.respondWith(
-    caches.match(e.request).then(cached => cached || fetch(e.request).catch(() => caches.match('./index.html')))
+    fetch(e.request)
+      .then(res => {
+        const clone = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, clone));
+        return res;
+      })
+      .catch(() => caches.match(e.request))
   );
 });
