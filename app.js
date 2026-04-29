@@ -159,7 +159,7 @@ function createPost(content, tags, image) {
     likeCount: 0, commentCount: 0,
     createdAt: new Date().toISOString()
   };
-  ref.set(post);
+  ref.set(post).catch(err => alert('投稿エラー: ' + err.message));
   return { id: ref.key, ...post };
 }
 

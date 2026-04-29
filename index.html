@@ -155,14 +155,17 @@
         canvas.width = w; canvas.height = h;
         canvas.getContext('2d').drawImage(img, 0, 0, w, h);
         selectedImageData = canvas.toDataURL('image/jpeg', 0.6);
-        if (selectedImageData.length > 500000) {
+        if (selectedImageData.length > 600000) {
           alert('画像が大きすぎます。もっと小さい画像を選んでください。');
           selectedImageData = null;
+          document.getElementById('imageInput').value = '';
           return;
         }
         document.getElementById('imgPreview').src = selectedImageData;
         document.getElementById('imgPreviewWrap').style.display = 'block';
         document.getElementById('photoBtn').classList.add('has-img');
+        // 画像があれば投稿ボタンを有効化
+        document.getElementById('composeSubmitBtn').disabled = false;
       };
       img.src = e.target.result;
     };
@@ -179,12 +182,12 @@
   function submitPost() {
     const ta = document.getElementById('composeTa');
     const text = ta.value.trim();
-    if (!text) return;
-    createPost(text, selectedTags, selectedImageData);
+    if (!text && !selectedImageData) return;
+    const result = createPost(text || '📷', selectedTags, selectedImageData);
+    if (!result) { alert('投稿に失敗しました。Firebaseの設定を確認してください。'); return; }
     selectedTags = [];
     selectedImageData = null;
     renderCompose();
-    // Firebase リスナーが自動でフィードを更新する
   }
 
   function renderTagFilter() {
