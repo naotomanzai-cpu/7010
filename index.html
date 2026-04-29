@@ -129,12 +129,11 @@
             <button class="compose-photo-btn" onclick="document.getElementById('imageInput').click()" id="photoBtn">📷 写真</button>
             <input type="file" id="imageInput" accept="image/*" style="display:none" onchange="handleImageSelect(this)">
           </div>
-          <button class="compose-submit" id="composeSubmitBtn" onclick="submitPost()" disabled>投稿する</button>
+          <button class="compose-submit" id="composeSubmitBtn" onclick="submitPost()">投稿する</button>
         </div>
       </div>`;
     document.getElementById('composeTa').addEventListener('input', function() {
       document.getElementById('charCounter').textContent = `${this.value.length} / 150`;
-      document.getElementById('composeSubmitBtn').disabled = this.value.trim().length === 0;
     });
   }
 
